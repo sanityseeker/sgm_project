@@ -63,61 +63,6 @@ void measureBorders(Mat& first, Mat& second, int& min_disp, int& max_disp) {  //
     min_disp = static_cast<int>(ceil(min));
 }
 
-void countLcost(const std::vector<std::vector<std::vector<int>>>& unaries
-                , std::vector<std::vector<std::vector<int>>>& aggregated
-                , std::vector<std::vector<std::vector<int>>>& temp
-                , int x, int y, int d, const Direction r, const int max_disparity) {
-    if (temp[y][x][d] == 0) {
-        temp[y][x][d] = unaries[y][x][d];
-        aggregated[y][x][d] += unaries[y][x][d];  // add to final array
-        
-        int currd = d - max_disparity;
-        int newX = x - r.x;
-        int newY = y - r.y;
-        
-        if (newX >= 0 && newX < unaries[0].size() && newY >= 0 && newY < unaries.size()) {
-            double minimum = MAXINT;
-            double kmin = MAXINT;
-            for (int i = -max_disparity; i <= max_disparity; ++i) {
-                countLcost(unaries, aggregated, temp, newX, newY, i + max_disparity, r, max_disparity);
-                if (abs(currd - i) > 1 && temp[newY][newX][i + max_disparity] < minimum) {
-                    minimum = temp[newY][newX][i + max_disparity];
-                } else if (temp[newY][newX][i + max_disparity] < kmin) {
-                    kmin = temp[newY][newX][i + max_disparity];
-                }
-            }
-            
-            if (currd == -max_disparity) {
-                temp[y][x][d] += static_cast<int>(ceil(mymin<double>({temp[newY][newX][d]
-                        , temp[newY][newX][d + 1] + penaltyEqual
-                        , minimum + penaltyDiffer}) - kmin));
-                
-                aggregated[y][x][d] += static_cast<int>(ceil(mymin<double>({temp[newY][newX][d]
-                        , temp[newY][newX][d + 1] + penaltyEqual
-                        , minimum + penaltyDiffer}) - kmin));
-            } else if (currd == max_disparity) {
-                temp[y][x][d] += static_cast<int>(ceil(mymin<double>({temp[newY][newX][d]
-                        , temp[newY][newX][d - 1] + penaltyEqual
-                        , minimum + penaltyDiffer}) - kmin));
-                
-                aggregated[y][x][d] += static_cast<int>(ceil(mymin<double>({temp[newY][newX][d]
-                        , temp[newY][newX][d - 1] + penaltyEqual
-                        , minimum + penaltyDiffer}) - kmin));
-            } else {
-                temp[y][x][d] += static_cast<int>(ceil(mymin<double>({temp[newY][newX][d]
-                        , temp[newY][newX][d - 1] + penaltyEqual
-                        , temp[newY][newX][d + 1] + penaltyEqual
-                        , minimum + penaltyDiffer}) - kmin));
-    
-                aggregated[y][x][d] += static_cast<int>(ceil(mymin<double>({temp[newY][newX][d]
-                             , temp[newY][newX][d - 1] + penaltyEqual
-                       , temp[newY][newX][d + 1] + penaltyEqual
-                       , minimum + penaltyDiffer}) - kmin));
-            }
-        }
-    }
-}
-
 int main() {  // there will be console flags in final version
     std::string firstSource, secSource;
 //    std::cin >> firstSource >> secSource;
@@ -130,52 +75,97 @@ int main() {  // there will be console flags in final version
     measureBorders(first, second, min_disp, max_disp);
     max_disp = std::min(3 * min_disp, max_disp); // approximately
     
-    std::vector<std::vector<std::vector<int>>> ctable(first.rows, (std::vector<std::vector<int>> (first.cols, std::vector<int>(2 * max_disp + 1, 0))));
-    std::vector<std::vector<std::vector<int>>> stable(first.rows, (std::vector<std::vector<int>> (first.cols, std::vector<int>(2 * max_disp + 1, 0))));
-    std::vector<std::vector<std::vector<int>>> temtable(first.rows, (std::vector<std::vector<int>> (first.cols, std::vector<int>(2 * max_disp + 1, 0))));
-    std::vector<std::vector<int>> disparities(first.rows, (std::vector<int> (first.cols, 0)));
+    std::vector<std::vector<std::vector<int>>> ctable(first.cols, (std::vector<std::vector<int>> (first.rows, std::vector<int>(2 * max_disp + 1, 0))));
+    std::vector<std::vector<std::vector<int>>> stable(first.cols, (std::vector<std::vector<int>> (first.rows, std::vector<int>(2 * max_disp + 1, 0))));
+    std::vector<std::vector<std::vector<int>>> temtable(first.cols, (std::vector<std::vector<int>> (first.rows, std::vector<int>(2 * max_disp + 1, 0))));
+    std::vector<std::vector<int>> disparities(first.cols, (std::vector<int> (first.rows, 0)));
     // unary potential
     for (size_t y = 0; y != first.rows; ++y) {
         for (size_t x = 0; x != first.cols; ++x) {
             for (int d = 0; d <= 2 * max_disp; ++d) {
                 int currd = d - max_disp;
-                ctable[y][x][d] = (x + currd >= 0 && x + currd < first.cols ?
+                ctable[x][y][d] = (x + currd >= 0 && x + currd < first.cols ?
                          abs(static_cast<int>(first.at<uchar>(y, x)) - static_cast<int>(second.at<uchar>(y, x + currd))) : 0);
             }
         }
     }
     
     // binary potential
-    Direction up(0, -1), down(0, 1), left(1, 0), right(-1, 0), right_down(-1, 1), right_up(-1, -1), left_down(1, 1), left_up(-1, -1);
-    for (size_t y = 0; y != first.rows; ++y) {
-        for (size_t x = 0; x != first.cols; ++x) {
-            for (int d = 0; d <= 2 * max_disp; ++d) {
-                countLcost(ctable, stable, temtable, x, y, d, right, max_disp);  // не совсем понятно, как поступать с суммой
-                temtable.clear();
-                countLcost(ctable, stable, temtable, x, y, d, left, max_disp);
-                temtable.clear();
-                countLcost(ctable, stable, temtable, x, y, d, up, max_disp);
-                temtable.clear();
-                countLcost(ctable, stable, temtable, x, y, d, down, max_disp);
-                temtable.clear();
-                countLcost(ctable, stable, temtable, x, y, d, right_up, max_disp);
-                temtable.clear();
-                countLcost(ctable, stable, temtable, x, y, d, right_down, max_disp);
-                temtable.clear();
-                countLcost(ctable, stable, temtable, x, y, d, left_up, max_disp);
-                temtable.clear();
-                countLcost(ctable, stable, temtable, x, y, d, left_down, max_disp);
-                temtable.clear();
+    Direction up(0, 1), down(0, -1), left(-1, 0), right(1, 0), right_down(1, -1), right_up(1, 1), left_down(-1, -1), left_up(-1, 1);
+    
+    // right
+    for (size_t x = 0; x != first.cols; ++x) {
+        for (size_t y = 0; y != first.rows; ++y) {
+            int newX = x - right.x;
+            
+            if (newX < 0) {
+                for (size_t d = 0; d <= 2 * max_disp; ++d)
+                temtable[x][y][d] = ctable[x][y][d];
+            } else {
+                std::vector<int> disps (4, 0);  // top 4 minimums of previous pixel with their disparities  to know exactly
+                std::vector<int> minimums (4, MAXINT);  // min(i) and min(k)
+                for (size_t i = 0; i <= 2 * max_disp; ++i) {
+                    for (size_t j = 0; j != minimums.size(); ++j) {
+                        if (temtable[newX][y][i] < minimums[j]) {
+                            for (size_t m = j + 1; m < minimums.size(); ++m) {
+                                minimums[m] = minimums[m - 1];
+                                disps[m] = disps[m - 1];
+                            }
+                            minimums[j] = temtable[newX][y][i];
+                            disps[j] = i;
+                            break;
+                        }
+                    }
+                }
+                
+                for (size_t d = 0; d <= 2 * max_disp; ++d) {
+                    int minimum;
+                    for(size_t j = 0; j != disps.size(); ++j) {
+                           if (abs(d - disps[j]) > 1) {
+                               minimum = minimums[j];
+                               break;
+                           }
+                    }
+                    if (d == 2 * max_disp) {
+                        temtable[x][y][d] = ctable[x][y][d] + static_cast<int>(mymin<double>({temtable[newX][y][d],
+                                                                                              temtable[newX][y][d - 1] +
+                                                                                              penaltyEqual,
+                                                                                              minimum +
+                                                                                              penaltyDiffer})) - minimums.front();
+                    } else if (d == 0) {
+                        temtable[x][y][d] = ctable[x][y][d] + static_cast<int>(mymin<double>({temtable[newX][y][d],
+                                                                                              temtable[newX][y][d + 1] +
+                                                                                              penaltyEqual,
+                                                                                              minimum +
+                                                                                              penaltyDiffer})) - minimums.front();
+                    } else {
+                        temtable[x][y][d] = ctable[x][y][d] + static_cast<int>(mymin<double>({temtable[newX][y][d],
+                                                                                              temtable[newX][y][d - 1] +
+                                                                                              penaltyEqual,
+                                                                                              temtable[newX][y][d + 1] +
+                                                                                              penaltyEqual,
+                                                                                              minimum +
+                                                                                              penaltyDiffer})) - minimums.front();
+                    }
+                }
             }
         }
     }
     
+    for (size_t x = 0; x != first.cols; ++x) {
+        for (size_t y = 0; y != first.rows; ++y) {
+            for (size_t d = 0; d != 2 * max_disp; ++d) {
+                stable[x][y][d] += temtable[x][y][d];
+            }
+        }
+    }
+    temtable.clear();
+    
     // select right disparity (not sure)
-    for (size_t y = 0; y != first.rows; ++y) {
-        for (size_t x = 0; x != first.cols; ++x) {
-            int min_index =
-                    std::min_element(stable[y][x].begin(), stable[y][x].end()) - stable[y][x].begin() - max_disp;
-            disparities[y][x] = min_index;
+    for (size_t x = 0; x != first.cols; ++x) {
+        for (size_t y = 0; y != first.rows; ++y) {
+            int min_index = std::min_element(stable[x][y].begin(), stable[x][y].end()) - stable[x][y].begin() - max_disp;
+            disparities[x][y] = min_index;
         }
     }
     
