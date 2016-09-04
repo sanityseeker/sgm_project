@@ -14,7 +14,7 @@ using namespace cv;
 using namespace cv::xfeatures2d;
 
 int penaltyEqual = 5;  // just an example of values, not tested
-int penaltyDiffer = 100;
+int penaltyDiffer = 60;
 
 template<class T>
 T mymin(std::initializer_list<T> ilist) {  // min function for multiple arguments
@@ -51,6 +51,20 @@ cv::Mat censusTransform3x3(const Mat& image) {
         }
     }
     return censusMap;
+}
+
+int HammingDistance (int A, int B) {
+    int S = A ^ B;
+    int BitCounter = 0;
+    if( A < 0 || B < 0 ) {
+        return 8 * sizeof(int);
+    }
+    while (S) {
+        if (S & 1)
+            ++BitCounter;
+        S >>= 1;
+    }
+    return BitCounter;
 }
 
 cv::Mat createDisparityImage(std::vector<std::vector<int>>& disparities, int max, int min) {
@@ -176,12 +190,16 @@ void countDirections(std::vector<std::vector<std::vector<int>>>& unaries, std::v
 }
 
 void countUnary(Mat& first, Mat& second, int max_disparity, int min_disparity, std::vector<std::vector<std::vector<int>>>& unaries) {
-    for (size_t y = 0; y != first.rows; ++y) {
-        for (size_t x = 0; x != first.cols; ++x) {
+    Mat censusFirst = censusTransform3x3(first);
+    Mat censusSecond = censusTransform3x3(second);
+    for (size_t y = 0; y != censusFirst.rows; ++y) {
+        for (size_t x = 0; x != censusFirst.cols; ++x) {
             for (int d = 0; d < max_disparity - min_disparity + 1; ++d) {
                 int currd = d + min_disparity;
-                unaries[x][y][d] = (x + currd >= 0 && x + currd < first.cols ?
-                                   abs(static_cast<int>(first.at<uchar>(y, x)) - static_cast<int>(second.at<uchar>(y, x + currd))) : 0);
+//                unaries[x][y][d] = (x + currd >= 0 && x + currd < first.cols ?
+//                                   abs(static_cast<int>(first.at<uchar>(y, x)) - static_cast<int>(second.at<uchar>(y, x + currd))) : 0);
+                  unaries[x][y][d] = (x + currd >= 0 && x + currd < censusFirst.cols ?
+                                      HammingDistance(censusFirst.at<uchar>(y, x), censusSecond.at<uchar>(y, x + currd)) : 0);
             }
         }
     }
@@ -235,9 +253,6 @@ int main() {  // there will be console flags in final version
     std::vector<std::vector<int>> base_disparities(first.cols, (std::vector<int>(first.rows, 0)));
     std::vector<std::vector<int>> match_disparities(second.cols, (std::vector<int>(second.rows, 0)));
     // unary potential
-//    Mat censusFirst = censusTransform3x3(first);
-//    Mat censusSecond = censusTransform3x3(second);
-//    countUnary(censusFirst, censusSecond, max_disp, min_disp, ctable);
     countUnary(first, second, max_disp, min_disp, ctable);
     
     // binary potential
