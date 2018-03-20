@@ -1,1 +1,1 @@
-# sgm_project
+# Summer practice on semi-global matching algorithm.
